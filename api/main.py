@@ -1,7 +1,1 @@
-from fastapi import FastAPI
-
-app = FastAPI()
-
-@app.get("/")
-def home():
-    return {"message": "Ghost AI running"}
+from backend.main import app
