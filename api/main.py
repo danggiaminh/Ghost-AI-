@@ -4,4 +4,4 @@ app = FastAPI()
 
 @app.get("/")
 def home():
-    return {"message": "Ghost AI is running"}
+    return {"message": "Ghost AI running"}
