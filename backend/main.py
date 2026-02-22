@@ -7,7 +7,16 @@ import logging
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 
-from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile, status
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -25,8 +34,103 @@ from .db import ensure_database
 from .middleware import InMemoryRateLimiter, RequestContextMiddleware
 from .moderation import is_aggressive_context, soft_moderate
 from .notifier import send_exception_report
-from .repository import (
-    clear_login_attempts,
+
+
+# =====================================================
+# APP INIT
+# =====================================================
+
+app = FastAPI(
+    title="Ghost AI 👻",
+    version="1.0.0",
+)
+
+settings: Settings = load_settings()
+
+# =====================================================
+# CORS (frontend gọi được)
+# =====================================================
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.add_middleware(RequestContextMiddleware)
+
+
+# =====================================================
+# STARTUP EVENT
+# =====================================================
+
+@app.on_event("startup")
+async def startup_event():
+    logging.info("Starting Ghost AI...")
+    await ensure_database()
+    logging.info("Database ready ✅")
+
+
+# =====================================================
+# RAILWAY HEALTH CHECK (QUAN TRỌNG NHẤT)
+# =====================================================
+
+@app.get("/")
+async def root():
+    return {
+        "name": "Ghost AI",
+        "status": "online",
+        "time": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.get("/health")
+async def health():
+    return {"ok": True}
+
+
+# =====================================================
+# GLOBAL ERROR HANDLER
+# =====================================================
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logging.exception("Unhandled exception")
+
+    try:
+        await send_exception_report(str(exc))
+    except Exception:
+        pass
+
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal Server Error"},
+    )
+
+
+# =====================================================
+# SIMPLE CHAT TEST ENDPOINT
+# =====================================================
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1)
+
+
+@app.post("/chat")
+async def chat(req: ChatRequest):
+
+    moderated = soft_moderate(req.message)
+
+    response = await generate_ai_response(
+        message=moderated,
+        tier=TIER_STANDARD,
+        intent=INTENT_CODING_TASK,
+    )
+
+    return {"reply": response}
+
     create_session,
     create_user,
     get_session,
